@@ -1,10 +1,10 @@
 import { act, render, screen } from '@tests/utils/test-utils';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { autocompleteMock } from '../../mocks/autocompleteMock';
-import { server } from '../../mocks/server';
-import SearchPanelControls from '../../../src/containers/SearchPanelControls';
-import { removeSearch } from '../../../src/state/actions';
+import { autocompleteMock } from '@tests/mocks/autocompleteMock';
+import { server } from '@tests/mocks/server';
+import SearchPanelControls from '@src/containers/SearchPanelControls';
+import { removeSearch } from '@src/state/actions';
 
 const presentationContext = 'http://iiif.io/api/presentation/2/context.json';
 const searchContext = 'http://iiif.io/api/search/1/context.json';

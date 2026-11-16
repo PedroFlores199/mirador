@@ -1,8 +1,8 @@
 import { render, screen } from '@tests/utils/test-utils';
 import userEvent from '@testing-library/user-event';
-import SearchHit from '../../../src/containers/SearchHit';
+import SearchHit from '@src/containers/SearchHit';
 
-vi.mock('../../../src/components/ScrollTo', () => ({
+vi.mock('@src/components/ScrollTo', () => ({
   // eslint-disable-next-line react/prop-types
   ScrollTo: ({ children }) => <div data-testid="scrollto">{children}</div>,
 }));
