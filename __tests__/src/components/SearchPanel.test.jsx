@@ -1,80 +1,51 @@
-import { render, screen, within } from '@tests/utils/test-utils';
+import { render, screen } from '@tests/utils/test-utils';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '@tests/mocks/server';
-import { contentSearchMock } from '@tests/mocks/contentSearchMock';
-import manifestFixtureFg165hz3589 from '@tests/fixtures/version-2/fg165hz3589.json';
+import { buildState } from '@tests/utils/build-state';
+import { buildSearchScenarios } from '@tests/utils/iiif-search-helpers';
 import SearchPanel from '@src/containers/SearchPanel';
 
-/**
- * Helper function to wrap the Redux-connected SearchPanel
- */
-function createWrapper(props = {}, { search, window } = {}) {
-  return render(<SearchPanel id="xyz" windowId="window" {...props} />, {
-    preloadedState: {
-      companionWindows: { xyz: { content: 'search' } },
-      manifests: {
-        manifest: {
-          id: 'manifest',
-          json: manifestFixtureFg165hz3589,
-        },
-      },
-      ...(search && {
-        searches: {
-          window: {
-            xyz: {
-              data: {},
-              ...search,
+describe.each(buildSearchScenarios())('SearchPanel (%s)', (_label, manifestJson, searchResponse, searchUrl) => {
+  const renderPanel = (props = {}, { search, window } = {}) =>
+    render(<SearchPanel id="cw" windowId="window" {...props} />, {
+      preloadedState: buildState({
+        companionWindows: { cw: { content: 'search' } },
+        manifestJson,
+        ...(search && {
+          searches: {
+            window: {
+              cw: {
+                data: {},
+                ...search,
+              },
             },
           },
-        },
-      }),
-      windows: {
-        window: {
-          id: 'window',
-          manifestId: 'manifest',
-          ...window,
-        },
-      },
-    },
-  });
-}
-
-describe('SearchPanel', () => {
-  const searchUrl = manifestFixtureFg165hz3589.service.at(0)['@id'];
-  beforeEach(() => {
-    server.use(
-      http.get(searchUrl, ({ request }) => {
-        const query = new URL(request.url).searchParams.get('q') || '';
-        return HttpResponse.json({
-          '@context': ['http://iiif.io/api/presentation/2/context.json', 'http://iiif.io/api/search/1/context.json'],
-          '@id': `${searchUrl}?q=${query}`,
-          '@type': 'sc:AnnotationList',
-          hits: [],
-          resources: [],
-          within: {
-            '@type': 'sc:Layer',
-            first: `${searchUrl}?start=0`,
-            ignored: [],
-            last: `${searchUrl}?start=0`,
+        }),
+        ...(window && {
+          windows: {
+            window,
           },
-        });
+        }),
       }),
-    );
+    });
+
+  beforeEach(() => {
+    server.use(http.get(searchUrl, () => HttpResponse.json(searchResponse)));
   });
 
   it('renders a CompanionWindow', () => {
-    createWrapper();
+    renderPanel();
     expect(screen.getByRole('region')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Search' })).toBeInTheDocument();
   });
 
   it('passes a Clear chip as the CompanionWindow title prop', () => {
-    createWrapper(
+    renderPanel(
       {},
       {
         search: {
-          data: { [`${searchUrl}?q=Wolpertinger`]: { isFetching: false, json: contentSearchMock } },
+          data: { [`${searchUrl}?q=Wolpertinger`]: { isFetching: false, json: searchResponse } },
           query: 'Wolpertinger',
         },
       },
@@ -87,11 +58,11 @@ describe('SearchPanel', () => {
   it('clears the search when the Clear chip is clicked', async () => {
     const user = userEvent.setup();
 
-    createWrapper(
+    renderPanel(
       {},
       {
         search: {
-          data: { [`${searchUrl}?q=Wolpertinger`]: { isFetching: false, json: contentSearchMock } },
+          data: { [`${searchUrl}?q=Wolpertinger`]: { isFetching: false, json: searchResponse } },
           query: 'Wolpertinger',
         },
       },
@@ -103,20 +74,20 @@ describe('SearchPanel', () => {
   });
 
   it('does not render a Clear chip if there is no search query to be cleared', () => {
-    createWrapper();
+    renderPanel();
 
     expect(screen.queryByRole('button', { name: 'Reset search' })).not.toBeInTheDocument();
   });
 
   it('has the SearchPanelControls component', () => {
-    createWrapper();
+    renderPanel();
 
     expect(screen.getByRole('combobox', { name: 'search terms' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Search in the document' })).toBeInTheDocument();
   });
 
   it('has the SearchResults list', () => {
-    createWrapper();
+    renderPanel();
 
     expect(screen.getByRole('list')).toBeInTheDocument();
   });
@@ -129,11 +100,11 @@ describe('SearchPanel', () => {
     server.use(
       http.get(searchUrl, ({ request }) => {
         requestedUrl = request.url;
-        return HttpResponse.json(contentSearchMock);
+        return HttpResponse.json(searchResponse);
       }),
     );
 
-    createWrapper({}, { window: { suggestedSearches: ['Dry Cleaning & Laundry'] } });
+    renderPanel({}, { window: { suggestedSearches: ['Dry Cleaning & Laundry'] } });
 
     const suggestionBtn = screen.getByRole('button', {
       name: 'Search this document for "Dry Cleaning & Laundry"',
@@ -153,11 +124,11 @@ describe('SearchPanel', () => {
   });
 
   it('does not suggest searches if the user has made a query', () => {
-    createWrapper(
+    renderPanel(
       {},
       {
         search: {
-          data: { [`${searchUrl}?q=blah`]: { isFetching: false, json: contentSearchMock } },
+          data: { [`${searchUrl}?q=blah`]: { isFetching: false, json: searchResponse } },
           query: 'blah',
         },
         window: { suggestedSearches: ['NSF'] },

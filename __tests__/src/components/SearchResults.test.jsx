@@ -1,82 +1,30 @@
 import { render, screen } from '@tests/utils/test-utils';
 import userEvent from '@testing-library/user-event';
-import { SearchResults } from '@src/SearchResults';
+import { http, HttpResponse } from 'msw';
+import { server } from '@tests/mocks/server';
+import { buildManifestV2, buildManifestV3 } from '@tests/utils/build-state';
+import { buildSearchResponse, buildSearchState, defaultSearchUrl } from '@tests/utils/iiif-search-helpers';
+import SearchResults from '@src/containers/SearchResults';
 
-/**
- * Helper function to create a shallow wrapper around SearchResults
- */
-function createWrapper(props) {
-  return render(
-    <SearchResults
-      companionWindowId="cwid"
-      windowId="window"
-      query="query"
-      selectedContentSearchAnnotation={['foo']}
-      searchHits={[
-        {
-          after: ', and start the chainsaw',
-          annotations: ['foo'],
-          before: 'Light up the',
-          match: 'moose',
-        },
-      ]}
-      {...props}
-    />,
-    {
-      preloadedState: {
-        companionWindows: {
-          cwid: {},
-        },
-        searches: {
-          window: {
-            cwid: {
-              data: {
-                'http://example.com/contentsearch': {
-                  id: 'http://example.com/contentsearch',
-                  isFetching: false,
-                  json: {
-                    resources: [
-                      {
-                        '@id': 'foo',
-                        '@type': 'oa:Annotation',
-                        motivation: 'sc:painting',
-                      },
-                      {
-                        '@id': 'x',
-                        label: 'The Anno Label',
-                      },
-                      {
-                        '@id': 'y',
-                        label: 'Annother Anno Label',
-                      },
-                    ],
-                  },
-                },
-              },
-              query: '',
-              selectedContentSearchAnnotation: null,
-              selectedContentSearchAnnotationIds: [],
-            },
-          },
-        },
-        windows: {
-          window: {},
-        },
-      },
-    },
-  );
-}
+const nextSearchUrl = `${defaultSearchUrl}?page=2`;
 
-describe('SearchResults', () => {
+describe.each([
+  ['Presentation 2 (Search API 1)', buildManifestV2(), 1],
+  ['Presentation 3 (Search API 1)', buildManifestV3(), 1],
+])('SearchResults (%s)', (_label, manifestJson, searchVersion) => {
+  const renderResults = (overrides = {}) =>
+    render(<SearchResults companionWindowId="cw" windowId="window" />, {
+      preloadedState: buildSearchState({ manifestJson, searchVersion, ...overrides }),
+    });
+
   it('renders a SearchHit for each hit', () => {
-    createWrapper({});
-
+    renderResults();
     expect(screen.getByRole('button', { name: /Light up the moose/ })).toBeInTheDocument();
   });
 
   it('can focus on a single item', async () => {
     const user = userEvent.setup();
-    createWrapper({});
+    renderResults();
 
     await user.click(screen.getByRole('button', { name: 'more...' }));
     expect(screen.getByRole('listitem')).toHaveTextContent(/start the chainsaw/);
@@ -89,13 +37,15 @@ describe('SearchResults', () => {
 
   describe('annotation-only search results', () => {
     it('renders a SearchHit for each annotation', () => {
-      createWrapper({
-        searchAnnotations: [{ id: 'x' }, { id: 'y' }],
-        searchHits: [],
+      renderResults({
+        hits: [],
+        resources: [
+          { '@id': 'x', '@type': 'oa:Annotation', label: 'The Anno Label', motivation: 'sc:painting' },
+          { '@id': 'y', '@type': 'oa:Annotation', label: 'Annother Anno Label', motivation: 'sc:painting' },
+        ],
       });
 
       expect(screen.getAllByRole('listitem')).toHaveLength(2);
-
       expect(screen.getByRole('heading', { level: 4, name: 'The Anno Label' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { level: 4, name: 'Annother Anno Label' })).toBeInTheDocument();
     });
@@ -103,30 +53,33 @@ describe('SearchResults', () => {
 
   describe('no search results', () => {
     it('shows no results', () => {
-      createWrapper({
+      renderResults({
+        hits: [],
         isFetching: false,
         query: 'nope',
-        searchHits: [],
+        resources: [],
       });
 
       expect(screen.getByText('No results found')).toHaveClass('MuiTypography-body1');
     });
 
     it('while fetching', () => {
-      createWrapper({
+      renderResults({
+        hits: [],
         isFetching: true,
         query: 'nope',
-        searchHits: [],
+        resources: [],
       });
 
       expect(screen.queryByText('No results found')).not.toBeInTheDocument();
     });
 
     it('without a query', () => {
-      createWrapper({
+      renderResults({
         isFetching: false,
         query: '',
       });
+
       expect(screen.queryByText('No results found')).not.toBeInTheDocument();
     });
   });
@@ -134,14 +87,21 @@ describe('SearchResults', () => {
   describe('multi-page search results', () => {
     it('shows a button to request the next page', async () => {
       const user = userEvent.setup();
-      const fetchSearch = vi.fn();
-      createWrapper({
-        fetchSearch,
-        nextSearch: 'search?page=2',
-      });
+      let requestedUrl;
+
+      server.use(
+        http.get(defaultSearchUrl, ({ request }) => {
+          requestedUrl = request.url;
+          return HttpResponse.json(buildSearchResponse({ hits: [], id: request.url, resources: [], searchVersion }));
+        }),
+      );
+
+      const { store } = renderResults({ next: nextSearchUrl });
 
       await user.click(screen.getByRole('button', { name: /More results/ }));
-      expect(fetchSearch).toHaveBeenCalledWith('window', 'cwid', 'search?page=2', 'query');
+
+      expect(requestedUrl).toBe(nextSearchUrl);
+      expect(store.getState().searches.window.cw.data[nextSearchUrl]).toBeDefined();
     });
   });
 });
